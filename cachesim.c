@@ -1,7 +1,7 @@
 /*
  * cache.c - a hardware cache simulator.
  *
- * [YOUR NAME(S) HERE]
+ * Marcus Ribeiro
  */
 
 #include <stdio.h>
@@ -9,6 +9,8 @@
 #include <assert.h>
 #include <getopt.h>
 #include <math.h>
+
+typedef unsigned long long ull;
 
 /* Globals set by command line arguments */
 int verbose = 0; /* whether to print verbose output */
@@ -25,8 +27,123 @@ int B; /* block size (bytes) */
 int miss_count = 0;
 int hit_count = 0;
 int eviction_count = 0;
+ull global_timer = 0;
 
-/* 
+/*
+
+This represents one cache line, not including dirty bits or actual data since they are
+not utilized in this program.
+
+*/
+typedef struct cache_line { //can't initialize struct values here
+	char valid_bit; //1 or 0
+	ull lru; //refers to updated global_timer
+	ull tag;
+} cache_line;
+
+/**
+ * readfile:
+ *
+ * Reads in a file using fgets, fclose, and sscanf. Parses this file to simulate loading data into a cache, adding to hit, miss, and eviction counters
+ * as it traverses
+ *
+ * Parameters: trace file to read, an initialized cache.
+ */
+void read_file(char* file, cache_line** cache) {
+
+	FILE * fPointer = fopen(file, "r");
+	char buf[100];
+
+	if (fPointer == NULL) {
+		perror("Cannot open file");
+	}
+
+	while (fgets(buf, 100, fPointer) != NULL) { //count misses, hits, and evicts
+
+		/* define variables to be utilized further */
+		char instruct;
+		ull address;
+		int size;
+
+		sscanf(buf," %c %llx,%d ",&instruct,&address,&size); //avoids I instruction and stores instruction, address and size for future use.
+
+		/* Deconstruct the address to get important numbers: tag and set index */
+		ull tag = (address >> (b + s));
+		ull index = (address >> b) & ((1 << s) - 1);
+
+		/* update global timer for LRU */
+		global_timer++;
+
+		if (instruct == 'L' || instruct == 'S' || instruct == 'M') { //L, S, and M instructions should all initially go through the same process in this program
+		cache_line* currentSet = cache[index];
+
+		int if_dealt_with = 0; //0 means that this buffer has not been put into the cache yet
+
+		for (int i = 0; i < E; i++) {
+
+			/* if it is a cache hit */
+			if ((tag == currentSet[i].tag) && (currentSet[i].valid_bit == 1) && (if_dealt_with == 0)) {
+				if_dealt_with++;
+				hit_count++;
+				currentSet[i].lru = global_timer;
+			}
+
+			/* if it is a cache miss in a set that already has the same tag, but with invalid data */
+			else if ((tag == currentSet[i].tag) && (currentSet[i].valid_bit != 1) && (if_dealt_with == 0)) {
+				if_dealt_with++;
+				miss_count++;
+				currentSet[i].valid_bit = 1;
+				currentSet[i].lru = global_timer;
+			}
+		}
+
+		/* If it is a cache miss that did not have an invalid representative in the cache and there is an empty space in the set */
+		if (if_dealt_with == 0) {
+			for (int i = 0; i < E; i++) {
+				if ((currentSet[i].lru == 0) && (if_dealt_with == 0)) { //has not been accessed, so store it
+					miss_count++;
+					currentSet[i].tag = tag;
+					currentSet[i].valid_bit = 1;
+					currentSet[i].lru = global_timer;
+					if_dealt_with++;
+				}
+			}
+		}
+
+		/* If it is a cache miss that did not have an invalid representative in the cache and that had no empty spaces in its set, it should evict data */
+		if (if_dealt_with == 0) {
+			miss_count++;
+			int min_index = 0;
+			for (int i = 1; i < E; i++) {
+				if (currentSet[i].lru < currentSet[min_index].lru) {
+					min_index = i;
+				}
+			}
+			eviction_count++;
+			currentSet[min_index].tag = tag;
+			currentSet[min_index].valid_bit = 1;
+			currentSet[min_index].lru = global_timer;
+		}
+	}
+
+	/* If instruction "M," meaning data modify, there is guarranteed to be another hit after the previous hit/miss */
+	if (instruct == 'M') {
+		cache_line* currentSet = cache[index];
+		int if_dealt_with = 0;
+		for (int i = 0; i < E; i++) {
+			if ((tag == currentSet[i].tag) && (currentSet[i].valid_bit == 1) && (if_dealt_with == 0)) {
+				if_dealt_with++;
+				hit_count++;
+				currentSet[i].lru = global_timer;
+			}
+		}
+	}
+
+	}
+	fclose(fPointer);
+}
+
+/*
  * Print the cache simulation statistics. The simulator must call
  * this function in order to be properly tested. Do not modify!
  */
@@ -106,15 +223,35 @@ int main(int argc, char** argv) {
     printf("simulation starting and reading from %s\n", trace_file);
   }
 
+  /* declare cache vars */
+  cache_line* cache_set = (cache_line*)malloc(E * sizeof(cache_line));
+  cache_line** cache = (cache_line**)malloc(S * sizeof(cache_set));
 
-  /**********************************************************************
-   * TODO: Run the cache simulation. Remember to modularize using helper
-   * functions; don't write the rest of the program inside of main!
-   **********************************************************************/
+  /* Put cache_line structs into the cache, initializing everything to 0 */
+  for (int i = 0; i < S; i++) { //for each set
+	cache[i] = malloc(E * sizeof(cache_line));
+	for (int j = 0; j < E; j++) { //for each line in a set
 
+		cache[i][j].valid_bit = 0;
+		cache[i][j].lru = 0;
+		cache[i][j].tag = 0;
+  	}
+  }
+
+  /* Read in the specified file */
+  read_file(trace_file, cache);
 
   /* Output the final cache statistics */
   printSummary(hit_count, miss_count, eviction_count);
+
+  /* Free memory */
+  for (int i = 0; i < S; i++) { //for each set
+	free(cache[i]);
+  }
+
+  free(cache);
+
   return 0;
+
 }
 
