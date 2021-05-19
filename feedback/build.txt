@@ -1,0 +1,1 @@
+gcc -g -Wall -Werror -std=c99 -o cachesim cachesim.c -lm

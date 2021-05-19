@@ -1,0 +1,14 @@
+Lab 5 - Make Some Cache
+Marcus
+
+Test script points: 27/27
+
+Comments:
+
+-read_file is a very long function that contains nearly the entire program.  Appropriate ways to modularize this function would be to add a helper function that accesses a particular cache address, or runs the LRU algorithm, etc. You can naturally separate the file parsing logic from the cache logic in this program (whereas right now it's all together in one long, complex function).
+
+-The second address access in the Modify case just needs to increment the hit counter; the rest of the work your program is doing here is redundant.
+
+-100 should be defined as constant (e.g., #define BUF_SIZE 100).
+
+Score: 90/100
